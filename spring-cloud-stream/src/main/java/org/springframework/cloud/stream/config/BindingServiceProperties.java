@@ -66,6 +66,16 @@ public class BindingServiceProperties implements ApplicationContextAware, Initia
 
 	private ConfigurableApplicationContext applicationContext;
 
+	/**
+	 * Determines if sender Binding is created in the event there are no Message
+	 * producing consumers (i.e., Functions).
+	 * Setting it to true will allow sender Binding to be created.
+	 * This is useful for cases where you microservice has only Consumers,
+	 * but want to continue with the original Message being sent downstream after
+	 * all Consumers are invoked.
+	 */
+	private boolean createSenderBinding;
+
 	public Map<String, BindingProperties> getBindings() {
 		return this.bindings;
 	}
@@ -210,5 +220,13 @@ public class BindingServiceProperties implements ApplicationContextAware, Initia
 
 	public String getBindingDestination(String bindingName) {
 		return getBindingProperties(bindingName).getDestination();
+	}
+
+	public boolean isCreateSenderBinding() {
+		return createSenderBinding;
+	}
+
+	public void setCreateSenderBinding(boolean createSenderBinding) {
+		this.createSenderBinding = createSenderBinding;
 	}
 }

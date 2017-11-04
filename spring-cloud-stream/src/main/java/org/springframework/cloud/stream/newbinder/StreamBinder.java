@@ -20,7 +20,6 @@ import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.Arrays;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -35,6 +34,7 @@ import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.beans.factory.support.RootBeanDefinition;
 import org.springframework.cloud.stream.binder.ConsumerProperties;
 import org.springframework.cloud.stream.binder.ProducerProperties;
+import org.springframework.cloud.stream.config.BindingServiceProperties;
 import org.springframework.core.env.Environment;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.converter.MessageConverter;
@@ -51,14 +51,13 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 
 	private final Logger logger = LoggerFactory.getLogger(StreamBinder.class);
 
-	/*
-	 * Holds type mappings for all functional beans (Supplier,Function,Consumer) gathered by this binder
-	 */
+	// Holds type mappings for all functional beans (Supplier,Function,Consumer) gathered by this binder
 	private Map<Function<?, ?>, Type[]> typedFunctions;
 
 	private Map<Consumer<?>, Type> typedConsumers;
 
 	private Map<Supplier<?>, Type> typedSuppliers;
+	// ----
 
 	private boolean atLeastOneFunctionWithNonVoidReturn;
 
@@ -67,6 +66,9 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 	private AbstractReceiverBinding<P,C> receiverBinding;
 
 	// ===== Autowire configuration =====
+	@Autowired
+	private BindingServiceProperties bindingServiceProperties;
+
 	@Autowired
 	private DefaultListableBeanFactory beanFactory;
 
@@ -89,7 +91,7 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 	private Map<String, Supplier<?>> suppliers;
 
 	@Autowired
-	private Environment environment;
+	private Environment environment;// TODO is it needed?
 
 	/**
 	 *
@@ -97,12 +99,6 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 	@Override
 	public void afterPropertiesSet() throws Exception {
 		this.assertZeroOrOneFunction();
-
-		//!!!!!!!!!!!!!
-		boolean createSenderBinding = false;
-//		Basically the message shoudl eihter be dropped or sent to destination (existing)
-//		Will work fine with Rabbit, but need a more generic solution
-		//!!!!!!!!!!!!
 
 		// MAP typed suppliers/functions/consumers
 		this.initializeTypedProducersConsumers();
@@ -116,7 +112,8 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 			logger.info("RECEIVER binding was not registered since no consumers are present in the application.");
 		}
 
-		if ((this.isConsumerPresent() && this.isProducerPresent()) || createSenderBinding){
+		// TODO what if only producers present??? Revisit
+		if ((this.isConsumerPresent() && this.isProducerPresent()) || this.bindingServiceProperties.isCreateSenderBinding()){
 			this.senderBinding = this.determineBinding(false);
 			logger.info("Registering SENDER binding: " + this.senderBinding);
 		}
@@ -126,7 +123,7 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 
 		Consumer<Message<byte[]>> sender = this.senderBinding != null ? this.senderBinding.getSender() : null;;
 
-		BindingConsumer bindingConsumer = new BindingConsumer(sender);
+		FunctionInvokingConsumer bindingConsumer = new FunctionInvokingConsumer(sender);
 		this.receiverBinding.registerReceiver(bindingConsumer);
 	}
 
@@ -161,37 +158,7 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 		return true;
 	}
 
-	/**
-	 *
-	 */
-	private final class BindingConsumer implements Consumer<Message<byte[]>> {
 
-		private final Consumer<Message<byte[]>> sender;
-
-		BindingConsumer(Consumer<Message<byte[]>> sender) {
-			this.sender = sender;
-		}
-
-		@SuppressWarnings({ "rawtypes", "unchecked" })
-		@Override
-		public void accept(Message<byte[]> rawData) {
-
-			if (StreamBinder.this.typedConsumers != null){
-				for (Entry<Consumer<?>, Type> consumerEntry : StreamBinder.this.typedConsumers.entrySet()) {
-					Object argument = streamMessageConverter.fromMessage(rawData, (Class<?>) consumerEntry.getValue());
-					((Consumer)consumerEntry.getKey()).accept(argument);
-				}
-			}
-			if (StreamBinder.this.typedFunctions != null){
-				for (Entry<Function<?,?>, Type[]> functionEntry : StreamBinder.this.typedFunctions.entrySet()) {
-					Object argument = streamMessageConverter.fromMessage(rawData, (Class<?>) functionEntry.getValue()[0]);
-					Object result = ((Function)functionEntry.getKey()).apply(argument);
-					Message<byte[]> resultMessage = (Message<byte[]>) streamMessageConverter.toMessage(result, rawData.getHeaders());
-					this.sender.accept(resultMessage);
-				}
-			}
-		}
-	}
 
 	/*
 	 * TODO
@@ -204,6 +171,8 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 		throw new UnsupportedOperationException();
 	}
 
+	//TODO
+	// Can't find references to spring.cloud.stream.bindings.input/output.binder properties in stream core. Are they used?
 	/**
 	 * Determines which binding to use in the event there are more then a
 	 * single {@link Binding} provider on the classpath (e.g., rabbit, kafka).<br>
@@ -216,13 +185,14 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 	 */
 	@SuppressWarnings("unchecked")
 	private <B extends Binding> B determineBinding(boolean receiver) {
+		// TODO look at the BindingServiceProperties. There is property for Default but no input/output
 		B rb;
 		B[] availableBinders = receiver ? (B[])this.availableReceiverBinding : (B[])this.availableSenderBinding;
 		if (availableBinders.length > 1) {
 			String specificBinder = receiver
 					? environment.getProperty("spring.cloud.stream.bindings.input.binder")
 							: environment.getProperty("spring.cloud.stream.bindings.output.binder");
-			String binderToUse = StringUtils.hasText(specificBinder) ? specificBinder : environment.getProperty("spring.cloud.stream.defaultBinder");
+			String binderToUse = StringUtils.hasText(specificBinder) ? specificBinder : this.bindingServiceProperties.getDefaultBinder();
 			Assert.isTrue(StringUtils.hasText(binderToUse), "Multiple binders detected in the classpath: "
 					+ Stream.of(this.availableReceiverBinding).map(b -> b.getName()).collect(Collectors.toList())
 					+ ". You must provide the name of the binder to use using one of '"
@@ -315,6 +285,39 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 		if (this.functions != null) {
 			Assert.isTrue(functions.size() <= 1, "Found more then one Function configured as @Bean which is not allowed. If "
 					+ "the intention was to invoke them in certain order please compose them with `andThen`");
+		}
+	}
+
+	/**
+	 *
+	 */
+	private final class FunctionInvokingConsumer implements Consumer<Message<byte[]>> {
+
+		private final Consumer<Message<byte[]>> sender;
+
+		FunctionInvokingConsumer(Consumer<Message<byte[]>> sender) {
+			this.sender = sender;
+		}
+
+		/*
+		 * TODO
+		 * Consider improvement where the conversion can be limited if it is known that multiple
+		 * Consumers will expect the same type. This way the conversion can happen only once
+		 */
+		@SuppressWarnings({ "rawtypes", "unchecked" })
+		@Override
+		public void accept(Message<byte[]> rawData) {
+			if (StreamBinder.this.typedFunctions != null){
+				StreamBinder.this.typedFunctions.entrySet().stream()
+					.map(entry -> ((Function)entry.getKey()).apply(streamMessageConverter.fromMessage(rawData, (Class<?>) entry.getValue()[0])))
+					.filter(result -> result != null)
+					.map(result -> (Message<byte[]>) streamMessageConverter.toMessage(result, rawData.getHeaders()))
+					.forEach(message -> sender.accept(message));
+			}
+			if (StreamBinder.this.typedConsumers != null){
+				StreamBinder.this.typedConsumers.entrySet().stream()
+					.forEach(entry -> ((Consumer)entry.getKey()).accept(streamMessageConverter.fromMessage(rawData, (Class<?>) entry.getValue())));
+			}
 		}
 	}
 }

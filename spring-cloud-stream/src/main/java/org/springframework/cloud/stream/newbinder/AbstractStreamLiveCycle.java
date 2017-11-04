@@ -68,5 +68,4 @@ abstract class AbstractStreamLiveCycle implements SmartLifecycle {
 		}
 		this.stop();
 	}
-
 }
