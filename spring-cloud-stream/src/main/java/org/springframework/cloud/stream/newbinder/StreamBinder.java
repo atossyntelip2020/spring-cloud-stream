@@ -20,6 +20,7 @@ import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.Arrays;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -43,9 +44,13 @@ import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
 /**
+ * Core binder that delegates to available {@link Binding}s to configure
+ * target {@link Message} 'sender' and 'receiver'.
  *
  * @author Oleg Zhurakousky
  *
+ * @see AbstractSenderBinding
+ * @see AbstractReceiverBinding
  */
 class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> extends AbstractStreamLiveCycle implements InitializingBean {
 
@@ -65,6 +70,8 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 
 	private AbstractReceiverBinding<P,C> receiverBinding;
 
+	private boolean nonVoidFunctionExists;
+
 	// ===== Autowire configuration =====
 	@Autowired
 	private BindingServiceProperties bindingServiceProperties;
@@ -82,10 +89,7 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 	private AbstractReceiverBinding<P,C>[] availableReceiverBinding;
 
 	@Autowired(required=false)
-	protected Map<String, Function<?,?>> functions;
-
-	@Autowired(required=false)
-	private Map<String, Consumer<?>> consumers;
+	protected Map<String, Function<?,?>> consumers;
 
 	@Autowired(required=false)
 	private Map<String, Supplier<?>> suppliers;
@@ -98,10 +102,8 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 	 */
 	@Override
 	public void afterPropertiesSet() throws Exception {
-		this.assertZeroOrOneFunction();
-
 		// MAP typed suppliers/functions/consumers
-		this.initializeTypedProducersConsumers();
+		this.initializeTypedProducersAndConsumers();
 
 		// Registers Bindings to be used by sender/receiver
 		if (this.isConsumerPresent()){
@@ -124,7 +126,9 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 		Consumer<Message<byte[]>> sender = this.senderBinding != null ? this.senderBinding.getSender() : null;;
 
 		FunctionInvokingConsumer bindingConsumer = new FunctionInvokingConsumer(sender);
-		this.receiverBinding.registerReceiver(bindingConsumer);
+		if (this.receiverBinding != null) { // can be null if there are no consumers
+			this.receiverBinding.registerReceiver(bindingConsumer);
+		}
 	}
 
 	/**
@@ -153,12 +157,13 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 		}
 	}
 
+	/**
+	 *
+	 */
 	@Override
 	public boolean isAutoStartup() {
 		return true;
 	}
-
-
 
 	/*
 	 * TODO
@@ -213,8 +218,27 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 		RootBeanDefinition beanDefinition = (RootBeanDefinition) beanFactory.getMergedBeanDefinition(beanName);
 		Method method = beanDefinition.getResolvedFactoryMethod();
 		Class<?> functionalInterface = method.getReturnType().isAssignableFrom(Function.class)
-				? Function.class : (method.getReturnType().isAssignableFrom(Consumer.class) ? Consumer.class : Supplier.class);
+				? Function.class : (method.getReturnType().isAssignableFrom(Consumer.class)
+						? Consumer.class : Supplier.class);
 		Type[] types = retrieveTypes(method.getGenericReturnType(), functionalInterface);
+
+		/*
+		 * Asserts that there is 0 or 1 {@link Function} bean.
+		 * Functions are a special case since they would act as an implicit splitter,
+		 * and without matching aggregator this could create a confusion by
+		 * producing multiple messages from a single input.
+		 *
+		 * On the flip side if user's intention is to execute all functions in some
+		 * order, they should compose them into a single function annotated with @Bean
+		 */
+		if (types.length == 2 && !Void.class.isAssignableFrom((Class<?>) types[1])) {
+			if (this.nonVoidFunctionExists) {
+				throw new IllegalStateException("Discovered more then one Function with non-Void return type. This is not allowed. "
+						+ "If the intention was to invoke multiple Functions in certain order please compose them with `andThen` "
+						+ "into a single Function bean.");
+			}
+			this.nonVoidFunctionExists = true;
+		}
 		if (logger.isDebugEnabled()){
 			logger.debug("Added type mappings: " + beanName + "(" + Arrays.asList(types).toString().replaceAll("\\[", "").replaceAll("]", "") + ")");
 		}
@@ -227,35 +251,31 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 	/**
 	 *
 	 */
+	//TODO improve error message
 	private Type[] retrieveTypes(Type genericInterface, Class<?> interfaceClass){
 		if ((genericInterface instanceof ParameterizedType) && interfaceClass
 				.getTypeName().equals(((ParameterizedType) genericInterface).getRawType().getTypeName())) {
 			ParameterizedType type = (ParameterizedType) genericInterface;
-			Type[] args = type.getActualTypeArguments();
-			return args;
+			return type.getActualTypeArguments();
 		}
-		return null;
+		throw new IllegalStateException("Failed to discover Function signature");
 	}
 
 	/**
 	 * Sets up maps of suppliers/functions/consumers where each entry
 	 * mapping supplier/function/consumer -> Type[].
 	 */
-	private void initializeTypedProducersConsumers() {
+	private void initializeTypedProducersAndConsumers() {
 		if (!CollectionUtils.isEmpty(this.suppliers)) {
 			this.typedSuppliers = this.suppliers.entrySet().stream()
 					.collect(Collectors.toMap(e -> e.getValue(), e -> discoverArgumetsType(e.getKey())[0]));
 		}
 
-		if (!CollectionUtils.isEmpty(this.functions)) {
-			this.typedFunctions = this.functions.entrySet().stream()
+		if (!CollectionUtils.isEmpty(this.consumers)) {
+			this.typedFunctions = this.consumers.entrySet().stream()
 					.collect(Collectors.toMap(e -> e.getValue(), e -> discoverArgumetsType(e.getKey())));
 		}
 
-		if (!CollectionUtils.isEmpty(this.consumers)) {
-			this.typedConsumers = this.consumers.entrySet().stream()
-					.collect(Collectors.toMap(e -> e.getValue(), e -> discoverArgumetsType(e.getKey())[0]));
-		}
 	}
 
 	/**
@@ -273,22 +293,6 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 	}
 
 	/**
-	 * Asserts that that there is 0 or 1 {@link Function}.<br>
-	 * Function is a special case since they will act as an implicit splitter,
-	 * and without matching aggregator this could create a confusion by
-	 * producing multiple messages from a single input.
-	 * <br>
-	 * On the flip side if user's intention is to execute all functions in some
-	 * order, they should compose them into a single function annotated with @Bean
-	 */
-	private void assertZeroOrOneFunction() {
-		if (this.functions != null) {
-			Assert.isTrue(functions.size() <= 1, "Found more then one Function configured as @Bean which is not allowed. If "
-					+ "the intention was to invoke them in certain order please compose them with `andThen`");
-		}
-	}
-
-	/**
 	 *
 	 */
 	private final class FunctionInvokingConsumer implements Consumer<Message<byte[]>> {
@@ -299,24 +303,24 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 			this.sender = sender;
 		}
 
-		/*
-		 * TODO
-		 * Consider improvement where the conversion can be limited if it is known that multiple
-		 * Consumers will expect the same type. This way the conversion can happen only once
+		/**
+		 *
 		 */
 		@SuppressWarnings({ "rawtypes", "unchecked" })
 		@Override
 		public void accept(Message<byte[]> rawData) {
-			if (StreamBinder.this.typedFunctions != null){
-				StreamBinder.this.typedFunctions.entrySet().stream()
-					.map(entry -> ((Function)entry.getKey()).apply(streamMessageConverter.fromMessage(rawData, (Class<?>) entry.getValue()[0])))
-					.filter(result -> result != null)
-					.map(result -> (Message<byte[]>) streamMessageConverter.toMessage(result, rawData.getHeaders()))
-					.forEach(message -> sender.accept(message));
-			}
-			if (StreamBinder.this.typedConsumers != null){
-				StreamBinder.this.typedConsumers.entrySet().stream()
-					.forEach(entry -> ((Consumer)entry.getKey()).accept(streamMessageConverter.fromMessage(rawData, (Class<?>) entry.getValue())));
+			Type inputType = null;
+			Object functionArgument = null;
+			for (Entry<Function<?,?>, Type[]> entry : StreamBinder.this.typedFunctions.entrySet()) {
+				if (!entry.getValue()[0].equals(inputType)) {
+					inputType = entry.getValue()[0];
+					functionArgument = StreamBinder.this.streamMessageConverter.fromMessage(rawData, (Class<?>) inputType);
+				}
+				Object resultValue = ((Function)entry.getKey()).apply(functionArgument);
+				if (resultValue != null) {
+					Message<byte[]> resultMessage = (Message<byte[]>) StreamBinder.this.streamMessageConverter.toMessage(resultValue, rawData.getHeaders());
+					this.sender.accept(resultMessage);
+				}
 			}
 		}
 	}

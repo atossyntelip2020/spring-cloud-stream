@@ -18,7 +18,11 @@ package org.springframework.cloud.stream.newbinder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
+import java.util.function.Function;
 
+import org.springframework.beans.BeansException;
+import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.cloud.stream.binder.ConsumerProperties;
 import org.springframework.cloud.stream.binder.ProducerProperties;
@@ -46,6 +50,11 @@ class StreamBinderBaseConfiguration {
 	@Bean
 	public <P extends ProducerProperties, C extends ConsumerProperties> StreamBinder<P,C> streamBinder() {
 		return new StreamBinder<>();
+	}
+
+	@Bean
+	public ConsumerToFunctionPostProcessor  consumerToFunctionPostProcessor() {
+		return new ConsumerToFunctionPostProcessor();
 	}
 
 	/*
@@ -78,6 +87,24 @@ class StreamBinderBaseConfiguration {
 			}
 			return message;
 		}
+	}
 
+	public  class ConsumerToFunctionPostProcessor implements BeanPostProcessor {
+
+		@SuppressWarnings("unchecked")
+		@Override
+		public Object postProcessBeforeInitialization(Object bean, String beanName) throws BeansException {
+			if (bean instanceof Consumer<?>) {
+				Consumer<Object> consumer = (Consumer<Object>) bean;
+				bean = new Function<Object, Void>() {
+					@Override
+					public Void apply(Object t) {
+						consumer.accept(t);
+						return null;
+					}
+				};
+			}
+			return bean;
+		}
 	}
 }
