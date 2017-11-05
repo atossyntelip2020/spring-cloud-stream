@@ -23,6 +23,7 @@ import java.util.function.Function;
 
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.config.BeanPostProcessor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.cloud.stream.binder.ConsumerProperties;
 import org.springframework.cloud.stream.binder.ProducerProperties;
@@ -34,11 +35,17 @@ import org.springframework.messaging.MessageHeaders;
 import org.springframework.messaging.converter.MessageConverter;
 import org.springframework.messaging.support.GenericMessage;
 
+/**
+ *
+ * @author Oleg Zhurakousky
+ *
+ */
 @Configuration
 @EnableConfigurationProperties({BindingServiceProperties.class})
 class StreamBinderBaseConfiguration {
 
 	@Bean
+	@ConditionalOnMissingBean(name="streamMessageConverter")
 	public MessageConverter streamMessageConverter() {
 		List<MessageConverter> messageConverters = new ArrayList<>();
 		messageConverters.add(new ByteArrayToStringConverter());
@@ -57,6 +64,9 @@ class StreamBinderBaseConfiguration {
 		return new ConsumerToFunctionPostProcessor();
 	}
 
+	/**
+	 *
+	 */
 	/*
 	 * TODO
 	 * Consider supporting byte[] to/from primitives such as Integer, Long etc.
@@ -89,7 +99,10 @@ class StreamBinderBaseConfiguration {
 		}
 	}
 
-	public  class ConsumerToFunctionPostProcessor implements BeanPostProcessor {
+	/**
+	 *
+	 */
+	final class ConsumerToFunctionPostProcessor implements BeanPostProcessor {
 
 		@SuppressWarnings("unchecked")
 		@Override

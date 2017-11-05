@@ -36,6 +36,7 @@ import org.springframework.beans.factory.support.RootBeanDefinition;
 import org.springframework.cloud.stream.binder.ConsumerProperties;
 import org.springframework.cloud.stream.binder.ProducerProperties;
 import org.springframework.cloud.stream.config.BindingServiceProperties;
+import org.springframework.cloud.stream.newbinder.ext.ProvenanceProvider;
 import org.springframework.core.env.Environment;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.converter.MessageConverter;
@@ -96,6 +97,9 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 
 	@Autowired
 	private Environment environment;// TODO is it needed?
+
+	@Autowired(required=false)
+	private ProvenanceProvider provenanceProvider;
 
 	/**
 	 *
@@ -293,7 +297,8 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 	}
 
 	/**
-	 *
+	 * Consumer which invokes Function while also providing a bridge between
+	 * receiverBinding (function input) and senderBinding (function output).
 	 */
 	private final class FunctionInvokingConsumer implements Consumer<Message<byte[]>> {
 
@@ -309,6 +314,7 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 		@SuppressWarnings({ "rawtypes", "unchecked" })
 		@Override
 		public void accept(Message<byte[]> rawData) {
+			this.captureProvenanceEvent(rawData, true);
 			Type inputType = null;
 			Object functionArgument = null;
 			for (Entry<Function<?,?>, Type[]> entry : StreamBinder.this.typedFunctions.entrySet()) {
@@ -320,7 +326,17 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 				if (resultValue != null) {
 					Message<byte[]> resultMessage = (Message<byte[]>) StreamBinder.this.streamMessageConverter.toMessage(resultValue, rawData.getHeaders());
 					this.sender.accept(resultMessage);
+					this.captureProvenanceEvent(resultMessage, false);
 				}
+			}
+		}
+
+		/**
+		 *
+		 */
+		private void captureProvenanceEvent(Message<byte[]> rawData, boolean inbound) {
+			if (StreamBinder.this.provenanceProvider != null) {
+				logger.warn("Provenance event capture is not supported at the moment");
 			}
 		}
 	}
