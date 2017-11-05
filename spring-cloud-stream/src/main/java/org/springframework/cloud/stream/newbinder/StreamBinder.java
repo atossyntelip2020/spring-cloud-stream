@@ -16,8 +16,6 @@
 package org.springframework.cloud.stream.newbinder;
 
 import java.lang.reflect.Method;
-import java.lang.reflect.ParameterizedType;
-import java.lang.reflect.Type;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -37,9 +35,12 @@ import org.springframework.cloud.stream.binder.ConsumerProperties;
 import org.springframework.cloud.stream.binder.ProducerProperties;
 import org.springframework.cloud.stream.config.BindingServiceProperties;
 import org.springframework.cloud.stream.newbinder.ext.ProvenanceProvider;
+import org.springframework.core.ResolvableType;
 import org.springframework.core.env.Environment;
 import org.springframework.messaging.Message;
-import org.springframework.messaging.converter.MessageConverter;
+import org.springframework.messaging.MessageHeaders;
+import org.springframework.messaging.converter.CompositeMessageConverter;
+import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.messaging.support.MessageHeaderAccessor;
 import org.springframework.util.Assert;
 import org.springframework.util.CollectionUtils;
@@ -59,18 +60,16 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 	private final Logger logger = LoggerFactory.getLogger(StreamBinder.class);
 
 	// Holds type mappings for all functional beans (Supplier,Function,Consumer) gathered by this binder
-	private Map<Function<?, ?>, Type[]> typedConsumers;
+	private Map<Function<?, ?>, ResolvableType[]> typedConsumers;
 
-	private Map<Supplier<?>, Type> typedSuppliers;
+	private Map<Supplier<?>, ResolvableType> typedSuppliers;
 	// ----
 
-	private boolean atLeastOneFunctionWithNonVoidReturn;
+	private boolean outputProducingConsumerExists;
 
 	private AbstractSenderBinding<P,C> senderBinding;
 
 	private AbstractReceiverBinding<P,C> receiverBinding;
-
-	private boolean nonVoidFunctionExists;
 
 	// ===== Autowire configuration =====
 	@Autowired
@@ -80,7 +79,7 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 	private DefaultListableBeanFactory beanFactory;
 
 	@Autowired
-	private MessageConverter streamMessageConverter;
+	private CompositeMessageConverter streamMessageConverter;
 
 	@Autowired
 	private AbstractSenderBinding<P,C>[] availableSenderBinding;
@@ -107,7 +106,13 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 	public void afterPropertiesSet() throws Exception {
 		// MAP typed suppliers/functions/consumers
 		this.initializeTypedProducersAndConsumers();
+	}
 
+	/**
+	 *
+	 */
+	@Override
+	public void doStart() {
 		// Registers Bindings to be used by sender/receiver
 		if (this.isConsumerPresent()){
 			this.receiverBinding = this.determineBinding(true);
@@ -132,13 +137,7 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 		if (this.receiverBinding != null) { // can be null if there are no consumers
 			this.receiverBinding.registerReceiver(bindingConsumer);
 		}
-	}
 
-	/**
-	 *
-	 */
-	@Override
-	public void doStart() {
 		if (this.senderBinding != null) {
 			this.senderBinding.start();
 		}
@@ -158,6 +157,8 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 		if (this.receiverBinding != null) {
 			this.receiverBinding.stop();
 		}
+		this.receiverBinding = null;
+		this.senderBinding = null;
 	}
 
 	/**
@@ -172,7 +173,7 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 	/**
 	 *
 	 */
-	public void registerFunction(String name, Function<?, ?> function, Type[] signature) {
+	public void registerFunction(String name, Function<?, ?> function, ResolvableType[] signature) {
 		this.typedConsumers.put(function, signature);
 		this.logFunctionRegistration(name, signature);
 	}
@@ -180,7 +181,7 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 	/**
 	 *
 	 */
-	public void registerSupplier(String name, Supplier<?> supplier, Type signature) {
+	public void registerSupplier(String name, Supplier<?> supplier, ResolvableType signature) {
 		this.typedSuppliers.put(supplier, signature);
 		this.logFunctionRegistration(name, signature);
 	}
@@ -223,13 +224,21 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 	/**
 	 * Discovers the argument types for provided {@link Function}s, {@link Consumer}s and {@link Supplier}s
 	 */
-	private Type[] discoverArgumetsType(String beanName){
+	private ResolvableType[] discoverArgumetsType(String beanName){
 		RootBeanDefinition beanDefinition = (RootBeanDefinition) beanFactory.getMergedBeanDefinition(beanName);
 		Method method = beanDefinition.getResolvedFactoryMethod();
-		Class<?> functionalInterface = method.getReturnType().isAssignableFrom(Function.class)
-				? Function.class : (method.getReturnType().isAssignableFrom(Consumer.class)
-						? Consumer.class : Supplier.class);
-		Type[] types = retrieveTypes(method.getGenericReturnType(), functionalInterface);
+		ResolvableType returnType = ResolvableType.forMethodReturnType(method);
+		ResolvableType[] returnTypeGenerics = returnType.getGenerics();
+
+		Class<?> convertableType = returnTypeGenerics[0].getRawClass();
+		if (convertableType.isAssignableFrom(Message.class)) {
+			ResolvableType payloadType = returnTypeGenerics[0].getGeneric();
+			convertableType = payloadType.getRawClass();
+			Assert.notNull(convertableType, "Failed to determine payload type of the "
+					+ "Message identified as an input parameter of function identified as '" + beanName + "', "
+					+ "since it is '?'. Please specify a concrete type. In the event you want to receive raw data "
+					+ "as the payload use 'Message<byte[]>'.");
+		}
 
 		/*
 		 * Asserts that there is 0 or 1 {@link Function} bean.
@@ -240,35 +249,21 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 		 * On the flip side if user's intention is to execute all functions in some
 		 * order, they should compose them into a single function annotated with @Bean
 		 */
-		if (types.length == 2 && !Void.class.isAssignableFrom((Class<?>) types[1])) {
-			if (this.nonVoidFunctionExists) {
+		if (returnTypeGenerics.length > 1 && !Void.class.isAssignableFrom(returnTypeGenerics[1].getRawClass())) {
+			if (this.outputProducingConsumerExists) {
 				throw new IllegalStateException("Discovered more then one Function with non-Void return type. This is not allowed. "
 						+ "If the intention was to invoke multiple Functions in certain order please compose them with `andThen` "
 						+ "into a single Function bean.");
 			}
-			this.nonVoidFunctionExists = true;
+			this.outputProducingConsumerExists = true;
 		}
-		if (functionalInterface.isAssignableFrom(Consumer.class)) {
-			types = new Type[] {types[0], Void.class};
-		}
-		this.logFunctionRegistration(beanName, types);
-		if (functionalInterface.isAssignableFrom(Function.class) && !types[1].equals(Void.class)){
-			this.atLeastOneFunctionWithNonVoidReturn = true;
-		}
-		return types;
-	}
 
-	/**
-	 *
-	 */
-	//TODO improve error message
-	private Type[] retrieveTypes(Type genericInterface, Class<?> interfaceClass){
-		if ((genericInterface instanceof ParameterizedType) && interfaceClass
-				.getTypeName().equals(((ParameterizedType) genericInterface).getRawType().getTypeName())) {
-			ParameterizedType type = (ParameterizedType) genericInterface;
-			return type.getActualTypeArguments();
+		if (returnType.getRawClass().isAssignableFrom(Consumer.class)) {
+			returnTypeGenerics = new ResolvableType[] {returnTypeGenerics[0], ResolvableType.forClass(Void.class)};
 		}
-		throw new IllegalStateException("Failed to discover Function signature");
+
+		this.logFunctionRegistration(beanName, returnTypeGenerics);
+		return returnTypeGenerics;
 	}
 
 	/**
@@ -298,13 +293,13 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 	 *
 	 */
 	private boolean isProducerPresent() {
-		return !CollectionUtils.isEmpty(this.typedSuppliers) || this.atLeastOneFunctionWithNonVoidReturn;
+		return !CollectionUtils.isEmpty(this.typedSuppliers) || this.outputProducingConsumerExists;
 	}
 
 	/**
 	 *
 	 */
-	private void logFunctionRegistration(String name, Type... signature) {
+	private void logFunctionRegistration(String name, ResolvableType... signature) {
 		if (logger.isDebugEnabled()){
 			String mapping = Arrays.asList(signature).toString().replaceAll("\\[", "").replaceAll("]", "");
 			String functionalInterfaceName = (signature.length == 2 ? "Function" : "Supplier");
@@ -342,17 +337,34 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 		@Override
 		public void accept(Message<byte[]> rawData) {
 			this.captureProvenanceEvent(rawData, true);
-			Type inputType = null;
-			Object functionArgument = null;
-			for (Entry<Function<?,?>, Type[]> entry : StreamBinder.this.typedConsumers.entrySet()) {
+			ResolvableType inputType = null;
+			Object resolvedInputParameter = null;
+			for (Entry<Function<?,?>, ResolvableType[]> entry : StreamBinder.this.typedConsumers.entrySet()) {
+				boolean inputTypeIsMessage = false;
 				if (!entry.getValue()[0].equals(inputType)) {
 					inputType = entry.getValue()[0];
-					functionArgument = StreamBinder.this.streamMessageConverter.fromMessage(rawData, (Class<?>) inputType);
+
+					Class<?> convertableType = inputType.getRawClass();
+					if (convertableType.isAssignableFrom(Message.class)) {
+						inputTypeIsMessage = true;
+						ResolvableType payloadType = inputType.getGeneric();
+						convertableType = payloadType.getRawClass();
+					}
+					resolvedInputParameter = StreamBinder.this.streamMessageConverter.fromMessage(rawData, convertableType);
+					Assert.notNull(resolvedInputParameter, "Failed to convert input parameter to '" + convertableType + "'. No suitable converter found.");
 				}
-				Object resultValue = ((Function)entry.getKey()).apply(functionArgument);
+				if (inputTypeIsMessage) {
+					resolvedInputParameter = MessageBuilder.withPayload(resolvedInputParameter).copyHeaders(rawData.getHeaders()).build();
+				}
+				Object resultValue = ((Function)entry.getKey()).apply(resolvedInputParameter);
+				MessageHeaders messageHeaders = rawData.getHeaders();
 				if (resultValue != null) {
 					//TODO ensure that converters create Message with mutable headers so additional data (i.e., provenance) could be added without modifying message
-					Message<byte[]> resultMessage = (Message<byte[]>) StreamBinder.this.streamMessageConverter.toMessage(resultValue, rawData.getHeaders());
+					if (resultValue instanceof Message) {
+						messageHeaders = ((Message<?>)resultValue).getHeaders();
+						resultValue = ((Message<?>)resultValue).getPayload();
+					}
+					Message<byte[]> resultMessage = (Message<byte[]>) StreamBinder.this.streamMessageConverter.toMessage(resultValue, messageHeaders);
 					this.sender.accept(resultMessage);
 					this.captureProvenanceEvent(resultMessage, false);
 				}

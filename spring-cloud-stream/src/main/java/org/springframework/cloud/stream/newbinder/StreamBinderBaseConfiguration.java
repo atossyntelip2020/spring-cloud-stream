@@ -32,6 +32,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageHeaders;
+import org.springframework.messaging.converter.CompositeMessageConverter;
 import org.springframework.messaging.converter.MessageConverter;
 import org.springframework.messaging.support.GenericMessage;
 
@@ -46,10 +47,10 @@ class StreamBinderBaseConfiguration {
 
 	@Bean
 	@ConditionalOnMissingBean(name="streamMessageConverter")
-	public MessageConverter streamMessageConverter() {
+	public CompositeMessageConverter streamMessageConverter() {
 		List<MessageConverter> messageConverters = new ArrayList<>();
 		messageConverters.add(new ByteArrayToStringConverter());
-		StrictCompositeMessageConverter messageConverter = new StrictCompositeMessageConverter(messageConverters);
+		CompositeMessageConverter messageConverter = new CompositeMessageConverter(messageConverters);
 
 		return messageConverter;
 	}
@@ -73,13 +74,16 @@ class StreamBinderBaseConfiguration {
 	 * Basically whatever ByteBufer supports
 	 */
 	private static class ByteArrayToStringConverter implements MessageConverter {
-
 		@Override
 		public Object fromMessage(Message<?> message, Class<?> targetClass) {
 			Object returnedValue = null;
-			if (!message.getHeaders().containsKey(MessageHeaders.CONTENT_TYPE)
-					&& targetClass.isAssignableFrom(String.class) && message.getPayload() instanceof byte[]) {
-				returnedValue = new String((byte[])message.getPayload(), StandardCharsets.UTF_8);
+			if (!message.getHeaders().containsKey(MessageHeaders.CONTENT_TYPE)) {
+				if (targetClass.isAssignableFrom(byte[].class)) {
+					returnedValue = message.getPayload();
+				}
+				else if (targetClass.isAssignableFrom(String.class)) {
+					returnedValue = new String((byte[])message.getPayload(), StandardCharsets.UTF_8);
+				}
 			}
 			return returnedValue;
 		}
