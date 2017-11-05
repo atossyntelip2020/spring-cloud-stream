@@ -16,13 +16,16 @@
 package org.springframework.cloud.stream.newbinder;
 
 import org.springframework.context.SmartLifecycle;
+import org.springframework.jmx.export.annotation.ManagedOperation;
+import org.springframework.jmx.export.annotation.ManagedResource;
 
 /**
  *
  * @author Oleg Zhurakousky
  *
  */
-abstract class AbstractStreamLiveCycle implements SmartLifecycle {
+@ManagedResource
+public abstract class AbstractStreamLiveCycle implements SmartLifecycle {
 
 	private boolean running;
 
@@ -31,6 +34,7 @@ abstract class AbstractStreamLiveCycle implements SmartLifecycle {
 	public abstract void doStop();
 
 	@Override
+	@ManagedOperation
 	public synchronized void start() {
 		if (!this.running) {
 			this.doStart();
@@ -39,6 +43,7 @@ abstract class AbstractStreamLiveCycle implements SmartLifecycle {
 	}
 
 	@Override
+	@ManagedOperation
 	public synchronized void stop() {
 		if (this.running) {
 			this.doStop();

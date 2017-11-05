@@ -18,6 +18,7 @@ package org.springframework.cloud.stream.newbinder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cloud.stream.binder.ConsumerProperties;
 import org.springframework.cloud.stream.binder.ProducerProperties;
+import org.springframework.cloud.stream.config.BindingServiceProperties;
 import org.springframework.cloud.stream.provisioning.ProvisioningProvider;
 import org.springframework.util.Assert;
 
@@ -37,6 +38,9 @@ abstract class AbstractBinding<P extends ProducerProperties, C extends ConsumerP
 
 	@Autowired
 	private C consumerProperties;
+
+	@Autowired
+	private BindingServiceProperties bindingServiceProperties;
 
 	@Autowired
 	private ProvisioningProvider<C, P> provisioningProvider;
@@ -61,5 +65,9 @@ abstract class AbstractBinding<P extends ProducerProperties, C extends ConsumerP
 
 	protected ProvisioningProvider<C, P> getProvisioningProvider() {
 		return this.provisioningProvider;
+	}
+
+	public BindingServiceProperties getBindingServiceProperties() {
+		return bindingServiceProperties;
 	}
 }

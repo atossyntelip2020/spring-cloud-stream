@@ -36,6 +36,8 @@ import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.core.convert.ConversionService;
 import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.integration.support.utils.IntegrationUtils;
+import org.springframework.jmx.export.annotation.ManagedOperation;
+import org.springframework.jmx.export.annotation.ManagedResource;
 import org.springframework.util.Assert;
 
 /**
@@ -46,6 +48,7 @@ import org.springframework.util.Assert;
  */
 @ConfigurationProperties("spring.cloud.stream")
 @JsonInclude(Include.NON_DEFAULT)
+@ManagedResource
 public class BindingServiceProperties implements ApplicationContextAware, InitializingBean {
 
 	private ConversionService conversionService;
@@ -75,6 +78,27 @@ public class BindingServiceProperties implements ApplicationContextAware, Initia
 	 * all Consumers are invoked.
 	 */
 	private boolean createSenderBinding;
+
+	/**
+	 * The name of the destination consumer will be bound to. Defaults to "input".
+	 *
+	 * NOTE: Affects only new binder API
+	 */
+	private String consumerDestinationName = "input";
+
+	/**
+	 * The name of the group this consumer belongs to.
+	 *
+	 * NOTE: Affects only new binder API
+	 */
+	private String consumerGroupName;
+
+	/**
+	 * The name of the destination producer will be bound to. Defaults to "output".
+	 *
+	 * NOTE: Affects only new binder API
+	 */
+	private String producerDestinationName = "output";
 
 	public Map<String, BindingProperties> getBindings() {
 		return this.bindings;
@@ -228,5 +252,35 @@ public class BindingServiceProperties implements ApplicationContextAware, Initia
 
 	public void setCreateSenderBinding(boolean createSenderBinding) {
 		this.createSenderBinding = createSenderBinding;
+	}
+
+	@ManagedOperation
+	public String getConsumerDestinationName() {
+		return consumerDestinationName;
+	}
+
+	@ManagedOperation
+	public void setConsumerDestinationName(String consumerDestinationName) {
+		this.consumerDestinationName = consumerDestinationName;
+	}
+
+	@ManagedOperation
+	public String getConsumerGroupName() {
+		return this.consumerGroupName;
+	}
+
+	@ManagedOperation
+	public void setConsumerGroupName(String consumerGroup) {
+		this.consumerGroupName = consumerGroup;
+	}
+
+	@ManagedOperation
+	public String getProducerDestinationName() {
+		return producerDestinationName;
+	}
+
+	@ManagedOperation
+	public void setProducerDestinationName(String producerDestinationName) {
+		this.producerDestinationName = producerDestinationName;
 	}
 }

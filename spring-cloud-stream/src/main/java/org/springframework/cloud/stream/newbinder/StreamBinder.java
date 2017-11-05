@@ -40,6 +40,7 @@ import org.springframework.cloud.stream.newbinder.ext.ProvenanceProvider;
 import org.springframework.core.env.Environment;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.converter.MessageConverter;
+import org.springframework.messaging.support.MessageHeaderAccessor;
 import org.springframework.util.Assert;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
@@ -58,9 +59,7 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 	private final Logger logger = LoggerFactory.getLogger(StreamBinder.class);
 
 	// Holds type mappings for all functional beans (Supplier,Function,Consumer) gathered by this binder
-	private Map<Function<?, ?>, Type[]> typedFunctions;
-
-	private Map<Consumer<?>, Type> typedConsumers;
+	private Map<Function<?, ?>, Type[]> typedConsumers;
 
 	private Map<Supplier<?>, Type> typedSuppliers;
 	// ----
@@ -169,15 +168,21 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 		return true;
 	}
 
-	/*
-	 * TODO
-	 * This is something to think about with regard to registering consumers/functions/suppliers dynamically
-	 * The issue is that unless they are beans we need to somehow pass type information
-	 * Once that is done than it has to go thru the same routine where
-	 * 	- if it happen to be the first function, then provision destination, create binding etc.
+	//TODO there will probably be synchronization issues when iteration is performed and addition is made
+	/**
+	 *
 	 */
-	public void registerFunctional(Object functional) {
-		throw new UnsupportedOperationException();
+	public void registerFunction(String name, Function<?, ?> function, Type[] signature) {
+		this.typedConsumers.put(function, signature);
+		this.logFunctionRegistration(name, signature);
+	}
+
+	/**
+	 *
+	 */
+	public void registerSupplier(String name, Supplier<?> supplier, Type signature) {
+		this.typedSuppliers.put(supplier, signature);
+		this.logFunctionRegistration(name, signature);
 	}
 
 	//TODO
@@ -243,9 +248,10 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 			}
 			this.nonVoidFunctionExists = true;
 		}
-		if (logger.isDebugEnabled()){
-			logger.debug("Added type mappings: " + beanName + "(" + Arrays.asList(types).toString().replaceAll("\\[", "").replaceAll("]", "") + ")");
+		if (functionalInterface.isAssignableFrom(Consumer.class)) {
+			types = new Type[] {types[0], Void.class};
 		}
+		this.logFunctionRegistration(beanName, types);
 		if (functionalInterface.isAssignableFrom(Function.class) && !types[1].equals(Void.class)){
 			this.atLeastOneFunctionWithNonVoidReturn = true;
 		}
@@ -276,17 +282,16 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 		}
 
 		if (!CollectionUtils.isEmpty(this.consumers)) {
-			this.typedFunctions = this.consumers.entrySet().stream()
+			this.typedConsumers = this.consumers.entrySet().stream()
 					.collect(Collectors.toMap(e -> e.getValue(), e -> discoverArgumetsType(e.getKey())));
 		}
-
 	}
 
 	/**
 	 * Returns true if at least one consumer is present
 	 */
 	private boolean isConsumerPresent() {
-		return !CollectionUtils.isEmpty(this.typedConsumers) || !CollectionUtils.isEmpty(this.typedFunctions);
+		return !CollectionUtils.isEmpty(this.typedConsumers);
 	}
 
 	/**
@@ -294,6 +299,22 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 	 */
 	private boolean isProducerPresent() {
 		return !CollectionUtils.isEmpty(this.typedSuppliers) || this.atLeastOneFunctionWithNonVoidReturn;
+	}
+
+	/**
+	 *
+	 */
+	private void logFunctionRegistration(String name, Type... signature) {
+		if (logger.isDebugEnabled()){
+			String mapping = Arrays.asList(signature).toString().replaceAll("\\[", "").replaceAll("]", "");
+			String functionalInterfaceName = (signature.length == 2 ? "Function" : "Supplier");
+			if (StringUtils.hasText(name)) {
+				logger.debug("Registered " + functionalInterfaceName + "; " + name + "(" + mapping + ")");
+			}
+			else {
+				logger.debug("Registered " + functionalInterfaceName + "; (" + mapping + ")");
+			}
+		}
 	}
 
 	/**
@@ -309,7 +330,13 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 		}
 
 		/**
-		 *
+		 * NOTE: Take extra caution in the fact that the inbound {@link Message} was created
+		 * with mutable headers.
+		 * If need to update/add message headers by calling {@link MessageHeaderAccessor}
+		 * <pre>
+		 * MessageHeaderAccessor a = MessageHeaderAccessor.getMutableAccessor(rawData);
+		 * a.setHeader(..)
+		 * </pre>
 		 */
 		@SuppressWarnings({ "rawtypes", "unchecked" })
 		@Override
@@ -317,13 +344,14 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 			this.captureProvenanceEvent(rawData, true);
 			Type inputType = null;
 			Object functionArgument = null;
-			for (Entry<Function<?,?>, Type[]> entry : StreamBinder.this.typedFunctions.entrySet()) {
+			for (Entry<Function<?,?>, Type[]> entry : StreamBinder.this.typedConsumers.entrySet()) {
 				if (!entry.getValue()[0].equals(inputType)) {
 					inputType = entry.getValue()[0];
 					functionArgument = StreamBinder.this.streamMessageConverter.fromMessage(rawData, (Class<?>) inputType);
 				}
 				Object resultValue = ((Function)entry.getKey()).apply(functionArgument);
 				if (resultValue != null) {
+					//TODO ensure that converters create Message with mutable headers so additional data (i.e., provenance) could be added without modifying message
 					Message<byte[]> resultMessage = (Message<byte[]>) StreamBinder.this.streamMessageConverter.toMessage(resultValue, rawData.getHeaders());
 					this.sender.accept(resultMessage);
 					this.captureProvenanceEvent(resultMessage, false);
