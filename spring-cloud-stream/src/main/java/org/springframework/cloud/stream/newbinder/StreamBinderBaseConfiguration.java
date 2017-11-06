@@ -18,11 +18,7 @@ package org.springframework.cloud.stream.newbinder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Consumer;
-import java.util.function.Function;
 
-import org.springframework.beans.BeansException;
-import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.cloud.stream.binder.ConsumerProperties;
@@ -55,14 +51,13 @@ class StreamBinderBaseConfiguration {
 	}
 
 	@Bean
-	@ConditionalOnMissingBean
 	public <P extends ProducerProperties, C extends ConsumerProperties> StreamBinder<P,C> streamBinder() {
 		return new StreamBinder<>();
 	}
 
 	@Bean
-	public ConsumerToFunctionPostProcessor  consumerToFunctionPostProcessor() {
-		return new ConsumerToFunctionPostProcessor();
+	public ProducerConsumerWrappingPostProcessor  consumerToFunctionPostProcessor() {
+		return new ProducerConsumerWrappingPostProcessor();
 	}
 
 	/**
@@ -97,26 +92,6 @@ class StreamBinderBaseConfiguration {
 				}
 			}
 			return message;
-		}
-	}
-
-	/**
-	 * Implementation of {@link BeanPostProcessor} which converts {@link Consumer} type
-	 * beans to {@link Function}&lt;SomeType, Void&gt;}
-	 */
-	final class ConsumerToFunctionPostProcessor implements BeanPostProcessor {
-
-		@SuppressWarnings({ "unchecked", "rawtypes" })
-		@Override
-		public Object postProcessBeforeInitialization(Object bean, String beanName) throws BeansException {
-			if (bean instanceof Consumer) {
-				Consumer consumer = (Consumer) bean;
-				bean = (Function)x -> {
-					consumer.accept(x);
-					return null;
-				};
-			}
-			return bean;
 		}
 	}
 }
