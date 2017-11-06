@@ -30,11 +30,11 @@ import org.springframework.cloud.stream.binder.ProducerProperties;
 import org.springframework.cloud.stream.config.BindingServiceProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.integration.support.MutableMessage;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageHeaders;
 import org.springframework.messaging.converter.CompositeMessageConverter;
 import org.springframework.messaging.converter.MessageConverter;
-import org.springframework.messaging.support.GenericMessage;
 
 /**
  *
@@ -50,12 +50,12 @@ class StreamBinderBaseConfiguration {
 	public CompositeMessageConverter streamMessageConverter() {
 		List<MessageConverter> messageConverters = new ArrayList<>();
 		messageConverters.add(new ByteArrayToStringConverter());
-		CompositeMessageConverter messageConverter = new CompositeMessageConverter(messageConverters);
 
-		return messageConverter;
+		return new CompositeMessageConverter(messageConverters);
 	}
 
 	@Bean
+	@ConditionalOnMissingBean
 	public <P extends ProducerProperties, C extends ConsumerProperties> StreamBinder<P,C> streamBinder() {
 		return new StreamBinder<>();
 	}
@@ -66,13 +66,10 @@ class StreamBinderBaseConfiguration {
 	}
 
 	/**
-	 *
+	 * Implementation of {@link MessageConverter} used to convert between byte[] and String <b>only</b>
+	 * for cases when 'contentType' header is not present.
 	 */
-	/*
-	 * TODO
-	 * Consider supporting byte[] to/from primitives such as Integer, Long etc.
-	 * Basically whatever ByteBufer supports
-	 */
+	// TODO Consider supporting byte[] to/from primitives such as Integer, Long etc (whatever ByteBufer supports)
 	private static class ByteArrayToStringConverter implements MessageConverter {
 		@Override
 		public Object fromMessage(Message<?> message, Class<?> targetClass) {
@@ -93,10 +90,10 @@ class StreamBinderBaseConfiguration {
 			Message<byte[]> message = null;
 			if (!headers.containsKey(MessageHeaders.CONTENT_TYPE)) {
 				if (payload instanceof byte[]) {
-					message = new GenericMessage<byte[]>((byte[]) payload, headers);
+					message = new MutableMessage<byte[]>((byte[]) payload, headers);
 				}
 				else if (payload instanceof String) {
-					message = new GenericMessage<byte[]>(((String) payload).getBytes(StandardCharsets.UTF_8), headers);
+					message = new MutableMessage<byte[]>(((String) payload).getBytes(StandardCharsets.UTF_8), headers);
 				}
 			}
 			return message;
@@ -104,21 +101,19 @@ class StreamBinderBaseConfiguration {
 	}
 
 	/**
-	 *
+	 * Implementation of {@link BeanPostProcessor} which converts {@link Consumer} type
+	 * beans to {@link Function}&lt;SomeType, Void&gt;}
 	 */
 	final class ConsumerToFunctionPostProcessor implements BeanPostProcessor {
 
-		@SuppressWarnings("unchecked")
+		@SuppressWarnings({ "unchecked", "rawtypes" })
 		@Override
 		public Object postProcessBeforeInitialization(Object bean, String beanName) throws BeansException {
-			if (bean instanceof Consumer<?>) {
-				Consumer<Object> consumer = (Consumer<Object>) bean;
-				bean = new Function<Object, Void>() {
-					@Override
-					public Void apply(Object t) {
-						consumer.accept(t);
-						return null;
-					}
+			if (bean instanceof Consumer) {
+				Consumer consumer = (Consumer) bean;
+				bean = (Function)x -> {
+					consumer.accept(x);
+					return null;
 				};
 			}
 			return bean;

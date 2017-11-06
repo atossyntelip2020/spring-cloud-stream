@@ -240,21 +240,10 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 					+ "as the payload use 'Message<byte[]>'.");
 		}
 
-		/*
-		 * Asserts that there is 0 or 1 {@link Function} bean.
-		 * Functions are a special case since they would act as an implicit splitter,
-		 * and without matching aggregator this could create a confusion by
-		 * producing multiple messages from a single input.
-		 *
-		 * On the flip side if user's intention is to execute all functions in some
-		 * order, they should compose them into a single function annotated with @Bean
-		 */
 		if (returnTypeGenerics.length > 1 && !Void.class.isAssignableFrom(returnTypeGenerics[1].getRawClass())) {
-			if (this.outputProducingConsumerExists) {
-				throw new IllegalStateException("Discovered more then one Function with non-Void return type. This is not allowed. "
+			Assert.isTrue(!this.outputProducingConsumerExists, "Discovered more then one Function with non-Void return type. This is not allowed. "
 						+ "If the intention was to invoke multiple Functions in certain order please compose them with `andThen` "
 						+ "into a single Function bean.");
-			}
 			this.outputProducingConsumerExists = true;
 		}
 
@@ -303,12 +292,7 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 		if (logger.isDebugEnabled()){
 			String mapping = Arrays.asList(signature).toString().replaceAll("\\[", "").replaceAll("]", "");
 			String functionalInterfaceName = (signature.length == 2 ? "Function" : "Supplier");
-			if (StringUtils.hasText(name)) {
-				logger.debug("Registered " + functionalInterfaceName + "; " + name + "(" + mapping + ")");
-			}
-			else {
-				logger.debug("Registered " + functionalInterfaceName + "; (" + mapping + ")");
-			}
+			logger.debug("Registered " + functionalInterfaceName + "; " + (StringUtils.hasText(name) ? name : "") + "(" + mapping + ")");
 		}
 	}
 
@@ -335,8 +319,10 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 		 */
 		@SuppressWarnings({ "rawtypes", "unchecked" })
 		@Override
-		public void accept(Message<byte[]> rawData) {
-			this.captureProvenanceEvent(rawData, true);
+		public void accept(Message<byte[]> inboundMessage) {
+			this.captureProvenanceEvent(inboundMessage, true);
+			MessageHeaders messageHeaders = inboundMessage.getHeaders();
+
 			ResolvableType inputType = null;
 			Object resolvedInputParameter = null;
 			for (Entry<Function<?,?>, ResolvableType[]> entry : StreamBinder.this.typedConsumers.entrySet()) {
@@ -350,23 +336,30 @@ class StreamBinder<P extends ProducerProperties, C extends ConsumerProperties> e
 						ResolvableType payloadType = inputType.getGeneric();
 						convertableType = payloadType.getRawClass();
 					}
-					resolvedInputParameter = StreamBinder.this.streamMessageConverter.fromMessage(rawData, convertableType);
-					Assert.notNull(resolvedInputParameter, "Failed to convert input parameter to '" + convertableType + "'. No suitable converter found.");
+					resolvedInputParameter = StreamBinder.this.streamMessageConverter.fromMessage(inboundMessage, convertableType);
+					Assert.notNull(resolvedInputParameter, "Failed to convert input parameter to '" + convertableType.getName() + "'. No suitable converter found.");
 				}
 				if (inputTypeIsMessage) {
-					resolvedInputParameter = MessageBuilder.withPayload(resolvedInputParameter).copyHeaders(rawData.getHeaders()).build();
+					resolvedInputParameter = MessageBuilder.withPayload(resolvedInputParameter).copyHeaders(messageHeaders).build();
 				}
+
+				// === invoke function
 				Object resultValue = ((Function)entry.getKey()).apply(resolvedInputParameter);
-				MessageHeaders messageHeaders = rawData.getHeaders();
+				// ===================
+
 				if (resultValue != null) {
 					//TODO ensure that converters create Message with mutable headers so additional data (i.e., provenance) could be added without modifying message
 					if (resultValue instanceof Message) {
 						messageHeaders = ((Message<?>)resultValue).getHeaders();
 						resultValue = ((Message<?>)resultValue).getPayload();
 					}
-					Message<byte[]> resultMessage = (Message<byte[]>) StreamBinder.this.streamMessageConverter.toMessage(resultValue, messageHeaders);
-					this.sender.accept(resultMessage);
-					this.captureProvenanceEvent(resultMessage, false);
+					Message<byte[]> outboundMessage = (Message<byte[]>) StreamBinder.this.streamMessageConverter.toMessage(resultValue, messageHeaders);
+
+					// === send downstream
+					this.sender.accept(outboundMessage);
+					//====================
+
+					this.captureProvenanceEvent(outboundMessage, false);
 				}
 			}
 		}

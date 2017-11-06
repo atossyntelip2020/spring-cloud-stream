@@ -22,7 +22,6 @@ import org.springframework.jmx.export.annotation.ManagedResource;
 /**
  *
  * @author Oleg Zhurakousky
- *
  */
 @ManagedResource
 public abstract class AbstractStreamLiveCycle implements SmartLifecycle {

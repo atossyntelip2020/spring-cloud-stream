@@ -23,18 +23,18 @@ import org.springframework.context.SmartLifecycle;
 
 /**
  * <p>
- * Represents the active bridge between the source system and
- * functional interface (i.e., {@link Supplier}, {@link Function}, {@link Consumer}).
+ * Binding is a bridge between the source system and functional interface.
+ * The instance of this strategy represents the active bridge delegating
+ * to/from source/target system and functional interfaces (i.e., {@link Supplier},
+ * {@link Function}, {@link Consumer}) exposed as beans by the application.
  * </p>
  * <p>
  * Implementations are responsible to handle both content negotiation and
- * type conversion to adapt data coming <i>from</i> the source system to such interface or going
- * <i>to</i> the source system from such interface.
+ * type conversion to adapt data coming <i>from</i> the source system or going
+ * <i>to</i> the target system.
  * </p>
- * <p>
- * Individual {@link Binding}s are created by the provided {@link BindingFactory}.
- * </p>
- * @see BindingFactory
+ * @see AbstractSenderBinding
+ * @see AbstractReceiverBinding
  *
  * @author Oleg Zhurakousky
  *
