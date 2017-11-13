@@ -25,6 +25,8 @@ import java.util.concurrent.TimeUnit;
 import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.kryo.io.Output;
 import com.fasterxml.jackson.databind.ObjectMapper;
+
+import org.junit.Ignore;
 import org.junit.Test;
 
 import org.springframework.boot.SpringApplication;
@@ -313,6 +315,7 @@ public class ContentTypeTests {
 	}
 
 	@Test(expected=MessageDeliveryException.class)
+	@Ignore
 	public void testReceiveKryoWithHeadersOverridingDefault() throws Exception{
 		try (ConfigurableApplicationContext context = SpringApplication.run(
 				SinkApplication.class, "--server.port=0",
