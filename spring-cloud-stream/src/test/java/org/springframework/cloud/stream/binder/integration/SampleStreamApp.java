@@ -16,7 +16,8 @@
 
 package org.springframework.cloud.stream.binder.integration;
 
-import java.nio.charset.StandardCharsets;
+import java.util.Random;
+import java.util.UUID;
 
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -27,11 +28,8 @@ import org.springframework.cloud.stream.messaging.Processor;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Import;
 import org.springframework.integration.annotation.ServiceActivator;
-import org.springframework.messaging.Message;
 import org.springframework.messaging.handler.annotation.SendTo;
 import org.springframework.messaging.support.GenericMessage;
-
-import static org.junit.Assert.assertEquals;
 
 /**
  * Sample spring cloud stream application that demonstrates the usage of {@link SpringIntegrationChannelBinder}.
@@ -44,22 +42,30 @@ import static org.junit.Assert.assertEquals;
 @Import(SpringIntegrationBinderConfiguration.class)
 public class SampleStreamApp {
 
-	public static void main(String[] args) {
+	private static Random random = new Random();
+
+	public static void main(String[] args) throws Exception {
 		ApplicationContext context = new SpringApplicationBuilder(SampleStreamApp.class).web(WebApplicationType.NONE)
 				.run("--server.port=0");
+		Random random = new Random();
 		SourceDestination source = context.getBean(SourceDestination.class);
 		TargetDestination target = context.getBean(TargetDestination.class);
-		source.send(new GenericMessage<byte[]>("Hello".getBytes()));
+		for (int i = 0; i < 1000000; i++) {
 
-		Message<?> message = target.receive();
-		assertEquals("Hello", new String((byte[])message.getPayload(), StandardCharsets.UTF_8));
+			source.send(new GenericMessage<byte[]>(new byte[random.nextInt(1000)+1]));
+			Thread.sleep(random.nextInt(10));
+		}
+
+//		Message<?> message = target.receive();
+//		assertEquals("Hello", new String((byte[])message.getPayload(), StandardCharsets.UTF_8));
 	}
 
 	@StreamListener(Processor.INPUT)
 	@SendTo(Processor.OUTPUT)
-	public String receive(String value) {
-		System.out.println("Handling payload: " + value);
-		return value;
+//	@ServiceActivator(inputChannel="input", outputChannel="output")
+	public String receive(String value) throws  Exception{
+		Thread.sleep(random.nextInt(100));
+		return (value + UUID.randomUUID()).substring(random.nextInt(value.length()));
 	}
 
 	@ServiceActivator(inputChannel="input.anonymous.errors")

@@ -46,6 +46,7 @@ import org.springframework.cloud.stream.binding.SingleBindingTargetBindable;
 import org.springframework.cloud.stream.binding.StreamListenerAnnotationBeanPostProcessor;
 import org.springframework.cloud.stream.binding.SubscribableChannelBindingTargetFactory;
 import org.springframework.cloud.stream.converter.CompositeMessageConverterFactory;
+import org.springframework.cloud.stream.micrometer.MicrometerMetricsConfig;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.DependsOn;
@@ -79,7 +80,7 @@ import org.springframework.tuple.spel.TuplePropertyAccessor;
  */
 @Configuration
 @EnableConfigurationProperties({ BindingServiceProperties.class, SpringIntegrationProperties.class })
-@Import(ContentTypeConfiguration.class)
+@Import({ContentTypeConfiguration.class, MicrometerMetricsConfig.class})
 public class BindingServiceConfiguration {
 
 	public static final String STREAM_LISTENER_ANNOTATION_BEAN_POST_PROCESSOR_NAME = "streamListenerAnnotationBeanPostProcessor";

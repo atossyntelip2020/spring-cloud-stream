@@ -21,6 +21,9 @@ import org.springframework.messaging.Message;
 import org.springframework.messaging.MessagingException;
 import org.springframework.messaging.handler.invocation.InvocableHandlerMethod;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+
 /**
  * @author Marius Bogoevici
  * @author Gary Russell
@@ -32,12 +35,22 @@ public class StreamListenerMessageHandler extends AbstractReplyProducingMessageH
 
 	private final boolean copyHeaders;
 
+	private final MeterRegistry meterRegistry;
+
+	private final Timer timer;
+
 	StreamListenerMessageHandler(InvocableHandlerMethod invocableHandlerMethod, boolean copyHeaders,
-			String[] notPropagatedHeaders) {
+			String[] notPropagatedHeaders, MeterRegistry meterRegistry) {
 		super();
 		this.invocableHandlerMethod = invocableHandlerMethod;
 		this.copyHeaders = copyHeaders;
 		this.setNotPropagatedHeaders(notPropagatedHeaders);
+		this.meterRegistry = meterRegistry;
+
+		String methodName = this.invocableHandlerMethod.getMethod().getName();
+		String className = this.invocableHandlerMethod.getMethod().getDeclaringClass().getSimpleName();
+
+		this.timer = this.meterRegistry.timer("StreamListener.timer", "method", methodName, "className", className);
 	}
 
 	@Override
@@ -47,6 +60,12 @@ public class StreamListenerMessageHandler extends AbstractReplyProducingMessageH
 
 	public boolean isVoid() {
 		return invocableHandlerMethod.isVoid();
+	}
+
+	@Override
+	public void handleMessage(Message<?> message) {
+		// May need to split it apart for cases where we want to care for additional metrics for errors
+		this.timer.record(() -> super.handleMessage(message));
 	}
 
 	@Override

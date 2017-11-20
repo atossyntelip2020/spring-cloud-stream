@@ -64,6 +64,8 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.util.ReflectionUtils;
 import org.springframework.util.StringUtils;
 
+import io.micrometer.core.instrument.MeterRegistry;
+
 /**
  * {@link BeanPostProcessor} that handles {@link StreamListener} annotations found on bean
  * methods.
@@ -95,6 +97,9 @@ public class StreamListenerAnnotationBeanPostProcessor
 
 	@Autowired
 	private SpringIntegrationProperties springIntegrationProperties;
+
+	@Autowired
+	private MeterRegistry metricsRegistry;
 
 	private ConfigurableApplicationContext applicationContext;
 
@@ -354,7 +359,7 @@ public class StreamListenerAnnotationBeanPostProcessor
 								checkProxy(mapping.getMethod(), mapping.getTargetBean()));
 				StreamListenerMessageHandler streamListenerMessageHandler = new StreamListenerMessageHandler(
 						invocableHandlerMethod, resolveExpressionAsBoolean(mapping.getCopyHeaders(), "copyHeaders"),
-						springIntegrationProperties.getMessageHandlerNotPropagatedHeaders());
+						springIntegrationProperties.getMessageHandlerNotPropagatedHeaders(), metricsRegistry);
 				streamListenerMessageHandler.setApplicationContext(this.applicationContext);
 				streamListenerMessageHandler.setBeanFactory(this.applicationContext.getBeanFactory());
 				if (StringUtils.hasText(mapping.getDefaultOutputChannel())) {

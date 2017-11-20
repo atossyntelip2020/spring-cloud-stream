@@ -47,6 +47,9 @@ import org.springframework.retry.support.RetryTemplate;
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
 
+import io.micrometer.core.instrument.DistributionSummary;
+import io.micrometer.core.instrument.MeterRegistry;
+
 /**
  * Implementation of {@link Binder} backed by Spring Integration framework.
  * It is useful for localized demos and testing.
@@ -99,6 +102,9 @@ class SpringIntegrationChannelBinder extends AbstractMessageChannelBinder<Consum
 	ProducerProperties, SpringIntegrationProvisioner> {
 
 	@Autowired
+	private MeterRegistry meterRegistry;
+
+	@Autowired
 	private BeanFactory beanFactory;
 
 	SpringIntegrationChannelBinder(SpringIntegrationProvisioner provisioningProvider) {
@@ -108,7 +114,18 @@ class SpringIntegrationChannelBinder extends AbstractMessageChannelBinder<Consum
 	@Override
 	protected MessageHandler createProducerMessageHandler(ProducerDestination destination,
 			ProducerProperties producerProperties, MessageChannel errorChannel) throws Exception {
-		BridgeHandler handler = new BridgeHandler();
+		DistributionSummary outboundDistributionSummary = this.meterRegistry.summary("binder.outbound.message.size");
+		BridgeHandler handler = new BridgeHandler() {
+			@Override
+			public void handleMessage(Message<?> message) throws MessagingException {
+				if (message.getPayload() instanceof byte[]) {
+					long messageSize = ((byte[])message.getPayload()).length;
+					outboundDistributionSummary.record(messageSize);
+				}
+				super.handleMessage(message);
+			}
+		};
+
 		handler.setBeanFactory(this.beanFactory);
 		handler.setOutputChannel(((SpringIntegrationProducerDestination)destination).getChannel());
 		return handler;
@@ -121,7 +138,7 @@ class SpringIntegrationChannelBinder extends AbstractMessageChannelBinder<Consum
 		SubscribableChannel siBinderInputChannel = ((SpringIntegrationConsumerDestination)destination).getChannel();
 
 		IntegrationMessageListeningContainer messageListenerContainer = new IntegrationMessageListeningContainer();
-		IntegrationBinderInboundChannelAdapter adapter = new IntegrationBinderInboundChannelAdapter(messageListenerContainer);
+		IntegrationBinderInboundChannelAdapter adapter = new IntegrationBinderInboundChannelAdapter(messageListenerContainer, this.meterRegistry);
 
 		String groupName = StringUtils.hasText(group) ? group : "anonymous";
 		ErrorInfrastructure errorInfrastructure = registerErrorInfrastructure(destination, groupName, properties);
@@ -164,12 +181,15 @@ class SpringIntegrationChannelBinder extends AbstractMessageChannelBinder<Consum
 
 		private final IntegrationMessageListeningContainer listenerContainer;
 
+		private final DistributionSummary distributionSummary;
+
 		private RetryTemplate retryTemplate;
 
 		private RecoveryCallback<? extends Object> recoveryCallback;
 
-		IntegrationBinderInboundChannelAdapter(IntegrationMessageListeningContainer listenerContainer) {
+		IntegrationBinderInboundChannelAdapter(IntegrationMessageListeningContainer listenerContainer, MeterRegistry meterRegistry) {
 			this.listenerContainer = listenerContainer;
+			this.distributionSummary = meterRegistry.summary("binder.inbound.message.size");
 		}
 
 		@SuppressWarnings("unused")
@@ -201,6 +221,10 @@ class SpringIntegrationChannelBinder extends AbstractMessageChannelBinder<Consum
 			@Override
 			@SuppressWarnings("unchecked")
 			public void accept(Message<?> message) {
+				if (message.getPayload() instanceof byte[]) {
+					long messageSize = ((byte[])message.getPayload()).length;
+					distributionSummary.record(messageSize);
+				}
 				try {
 					if (IntegrationBinderInboundChannelAdapter.this.retryTemplate == null) {
 						try {
