@@ -52,7 +52,7 @@ public class AggregateWithMainTest {
 	@Test
 	public void testAggregateApplication() throws InterruptedException {
 		// emulate a main method
-		ConfigurableApplicationContext context = new AggregateApplicationBuilder(MainConfiguration.class)
+		ConfigurableApplicationContext context = new AggregateApplicationBuilder(MainConfiguration.class).web(false)
 				.from(UppercaseProcessor.class).namespace("upper")
 				.to(SuffixProcessor.class).namespace("suffix")
 				.run("--spring.cloud.stream.bindings.input.contentType=text/plain","--spring.cloud.stream.bindings.output.contentType=text/plain");

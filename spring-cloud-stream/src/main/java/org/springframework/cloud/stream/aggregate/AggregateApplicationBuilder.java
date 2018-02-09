@@ -207,7 +207,13 @@ public class AggregateApplicationBuilder implements AggregateApplication, Applic
 		}
 		if (this.parentContext == null) {
 			if (Boolean.TRUE.equals(this.webEnvironment)) {
-				this.addParentSources(new Object[] { ServletWebServerFactoryAutoConfiguration.class });
+				try {
+					Class.forName("javax.servlet.ServletRequest");
+					this.addParentSources(new Object[] { ServletWebServerFactoryAutoConfiguration.class });
+				} catch (Exception e) {
+					throw new IllegalStateException("'webEnvironment' is set to 'true' but 'javax.servlet.*' does not appear to be available in the classpath. "
+							+ "Consider adding `org.springframework.boot:spring-boot-starter-web", e);
+				}
 			}
 			this.parentContext = AggregateApplicationUtils.createParentContext(
 					this.parentSources.toArray(new Class<?>[0]),
