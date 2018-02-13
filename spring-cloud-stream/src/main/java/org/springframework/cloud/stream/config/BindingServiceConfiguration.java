@@ -46,6 +46,7 @@ import org.springframework.cloud.stream.binding.SingleBindingTargetBindable;
 import org.springframework.cloud.stream.binding.StreamListenerAnnotationBeanPostProcessor;
 import org.springframework.cloud.stream.binding.SubscribableChannelBindingTargetFactory;
 import org.springframework.cloud.stream.converter.CompositeMessageConverterFactory;
+import org.springframework.cloud.stream.micrometer.DestinationPublishingMetricsAutoConfiguration;
 import org.springframework.context.ApplicationListener;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -68,6 +69,7 @@ import org.springframework.messaging.handler.annotation.support.DefaultMessageHa
 import org.springframework.messaging.handler.annotation.support.MessageHandlerMethodFactory;
 import org.springframework.scheduling.TaskScheduler;
 
+
 /**
  * Configuration class that provides necessary beans for {@link MessageChannel} binding.
  *
@@ -82,7 +84,7 @@ import org.springframework.scheduling.TaskScheduler;
  */
 @Configuration
 @EnableConfigurationProperties({ BindingServiceProperties.class, SpringIntegrationProperties.class })
-@Import(ContentTypeConfiguration.class)
+@Import({ContentTypeConfiguration.class, DestinationPublishingMetricsAutoConfiguration.class})
 @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
 public class BindingServiceConfiguration {
 
@@ -238,5 +240,4 @@ public class BindingServiceConfiguration {
 			}
 		};
 	}
-
 }
