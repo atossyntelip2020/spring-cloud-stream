@@ -37,6 +37,8 @@ import org.springframework.validation.annotation.Validated;
 @Validated
 public class BindingProperties {
 
+	public static final String DEFAULT_CONTENT_TYPE = "application/json";
+	
 	private static final String COMMA = ",";
 
 	/**
@@ -60,7 +62,7 @@ public class BindingProperties {
 	 * Specifies content-type that will be used by this binding in the event 
 	 * it is not specified in Message headers. Default: 'application/json'.
 	 */
-	private String contentType = "application/json";
+	private String contentType = DEFAULT_CONTENT_TYPE;
 
 	/**
 	 * The name of the binder to use for this binding in the event multiple binders available (e.g., 'rabbit');
