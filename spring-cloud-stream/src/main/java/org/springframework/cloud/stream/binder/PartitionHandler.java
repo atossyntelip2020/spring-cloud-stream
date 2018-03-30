@@ -95,7 +95,7 @@ public class PartitionHandler {
 	@SuppressWarnings("deprecation")
 	private Object extractKey(Message<?> message) {
 		Object key = null;
-		if (this.producerProperties.getPartitionKeyExtractorClass() != null) {
+		if (this.producerProperties.getPartitionKeyExtractorClass() != null || this.producerProperties.getPartitionKeyExtractorName() != null) {
 			key = invokeKeyExtractor(message);
 		}
 		else if (this.producerProperties.getPartitionKeyExpression() != null) {

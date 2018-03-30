@@ -86,9 +86,9 @@ public class MessageConverterConfigurer implements MessageChannelAndSourceConfig
 
 	private ConfigurableListableBeanFactory beanFactory;
 
-	private final Map<String, PartitionKeyExtractorStrategy> partitionKeyExtractors;
-
-	private final Map<String, PartitionSelectorStrategy> partitionSelectors;
+//	private final Map<String, PartitionKeyExtractorStrategy> partitionKeyExtractors;
+//
+//	private final Map<String, PartitionSelectorStrategy> partitionSelectors;
 
 	private final Field headersField;
 
@@ -105,8 +105,8 @@ public class MessageConverterConfigurer implements MessageChannelAndSourceConfig
 				"The message converter factory cannot be null");
 		this.bindingServiceProperties = bindingServiceProperties;
 		this.compositeMessageConverterFactory = compositeMessageConverterFactory;
-		this.partitionKeyExtractors = partitionKeyExtractors == null ? Collections.emptyMap() : partitionKeyExtractors;
-		this.partitionSelectors = partitionSelectors == null ? Collections.emptyMap() : partitionSelectors;
+//		this.partitionKeyExtractors = partitionKeyExtractors == null ? Collections.emptyMap() : partitionKeyExtractors;
+//		this.partitionSelectors = partitionSelectors == null ? Collections.emptyMap() : partitionSelectors;
 
 		this.headersField = ReflectionUtils.findField(MessageHeaders.class, "headers");
 		headersField.setAccessible(true);
@@ -181,7 +181,7 @@ public class MessageConverterConfigurer implements MessageChannelAndSourceConfig
 
 	@SuppressWarnings("deprecation")
 	private PartitionKeyExtractorStrategy getPartitionKeyExtractorStrategy(ProducerProperties producerProperties) {
-		PartitionKeyExtractorStrategy partitionKeyExtractor;
+		PartitionKeyExtractorStrategy partitionKeyExtractor = null;
 		if (producerProperties.getPartitionKeyExtractorClass() != null) {
 			logger.warn("'partitionKeyExtractorClass' option is deprecated as of v2.0. Please configure partition "
 					+ "key extractor as a @Bean that implements 'PartitionKeyExtractorStrategy'. Additionally you can "
@@ -190,24 +190,25 @@ public class MessageConverterConfigurer implements MessageChannelAndSourceConfig
 			partitionKeyExtractor = instantiate(producerProperties.getPartitionKeyExtractorClass(), PartitionKeyExtractorStrategy.class);
 		}
 		else if (StringUtils.hasText(producerProperties.getPartitionKeyExtractorName())) {
-			partitionKeyExtractor = this.partitionKeyExtractors.get(producerProperties.getPartitionKeyExtractorName());
+//			partitionKeyExtractor = this.partitionKeyExtractors.get(producerProperties.getPartitionKeyExtractorName());
+			partitionKeyExtractor = this.beanFactory.getBean(producerProperties.getPartitionKeyExtractorName(), PartitionKeyExtractorStrategy.class);
 			Assert.notNull(partitionKeyExtractor, "PartitionKeyExtractorStrategy bean with the name '" + producerProperties.getPartitionKeyExtractorName()
 				+ "' can not be found. Has it been configured (e.g., @Bean)?");
 		}
-		else {
-			Assert.isTrue(this.partitionKeyExtractors.size() <= 1,
-					"Multiple  beans of type 'PartitionKeyExtractorStrategy' found. " + this.partitionKeyExtractors + ". Please "
-							+ "use 'spring.cloud.stream.bindings.output.producer.partitionKeyExtractorName' property to specify "
-							+ "the name of the bean to be used.");
-			partitionKeyExtractor = CollectionUtils.isEmpty(this.partitionKeyExtractors) ?
-					null : this.partitionKeyExtractors.values().iterator().next();
-		}
+//		else {
+//			Assert.isTrue(this.partitionKeyExtractors.size() <= 1,
+//					"Multiple  beans of type 'PartitionKeyExtractorStrategy' found. " + this.partitionKeyExtractors + ". Please "
+//							+ "use 'spring.cloud.stream.bindings.output.producer.partitionKeyExtractorName' property to specify "
+//							+ "the name of the bean to be used.");
+//			partitionKeyExtractor = CollectionUtils.isEmpty(this.partitionKeyExtractors) ?
+//					null : this.partitionKeyExtractors.values().iterator().next();
+//		}
 		return partitionKeyExtractor;
 	}
 
 	@SuppressWarnings("deprecation")
 	private PartitionSelectorStrategy getPartitionSelectorStrategy(ProducerProperties producerProperties) {
-		PartitionSelectorStrategy partitionSelector;
+		PartitionSelectorStrategy partitionSelector = null;
 		if (producerProperties.getPartitionSelectorClass() != null) {
 			logger.warn("'partitionSelectorClass' option is deprecated as of v2.0. Please configure partition "
 					+ "selector as a @Bean that implements 'PartitionSelectorStrategy'. Additionally you can "
@@ -217,19 +218,20 @@ public class MessageConverterConfigurer implements MessageChannelAndSourceConfig
 					PartitionSelectorStrategy.class);
 		}
 		else if (StringUtils.hasText(producerProperties.getPartitionSelectorName())) {
-			partitionSelector = this.partitionSelectors.get(producerProperties.getPartitionSelectorName());
+//			partitionSelector = this.partitionSelectors.get(producerProperties.getPartitionSelectorName());
+			partitionSelector = this.beanFactory.getBean(producerProperties.getPartitionSelectorName(), PartitionSelectorStrategy.class);
 			Assert.notNull(partitionSelector,
 					"PartitionSelectorStrategy bean with the name '" + producerProperties.getPartitionSelectorName()
 							+ "' can not be found. Has it been configured (e.g., @Bean)?");
 		}
-		else {
-			Assert.isTrue(this.partitionSelectors.size() <= 1,
-				"Multiple  beans of type 'PartitionSelectorStrategy' found. " + this.partitionSelectors + ". Please "
-					+ "use 'spring.cloud.stream.bindings.output.producer.partitionSelectorName' property to specify "
-					+ "the name of the bean to be used.");
-			partitionSelector = CollectionUtils.isEmpty(this.partitionSelectors)
-					? new DefaultPartitionSelector() : this.partitionSelectors.values().iterator().next();
-		}
+//		else {
+//			Assert.isTrue(this.partitionSelectors.size() <= 1,
+//				"Multiple  beans of type 'PartitionSelectorStrategy' found. " + this.partitionSelectors + ". Please "
+//					+ "use 'spring.cloud.stream.bindings.output.producer.partitionSelectorName' property to specify "
+//					+ "the name of the bean to be used.");
+//			partitionSelector = CollectionUtils.isEmpty(this.partitionSelectors)
+//					? new DefaultPartitionSelector() : this.partitionSelectors.values().iterator().next();
+//		}
 		return partitionSelector;
 	}
 

@@ -128,10 +128,10 @@ public class BindingServiceConfiguration {
 
 	@Bean
 	public MessageConverterConfigurer messageConverterConfigurer(BindingServiceProperties bindingServiceProperties,
-			CompositeMessageConverterFactory compositeMessageConverterFactory,
-			@Nullable Map<String, PartitionKeyExtractorStrategy> partitionKeyExtractors,
-			@Nullable Map<String, PartitionSelectorStrategy> partitionSelectors) {
-		return new MessageConverterConfigurer(bindingServiceProperties, compositeMessageConverterFactory, partitionKeyExtractors, partitionSelectors);
+			CompositeMessageConverterFactory compositeMessageConverterFactory) {//,
+//			@Nullable Map<String, PartitionKeyExtractorStrategy> partitionKeyExtractors,
+//			@Nullable Map<String, PartitionSelectorStrategy> partitionSelectors) {
+		return new MessageConverterConfigurer(bindingServiceProperties, compositeMessageConverterFactory, null, null);
 	}
 
 	@Bean
