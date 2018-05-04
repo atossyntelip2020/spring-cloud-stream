@@ -44,6 +44,7 @@ import org.springframework.cloud.stream.binding.SingleBindingTargetBindable;
 import org.springframework.cloud.stream.binding.StreamListenerAnnotationBeanPostProcessor;
 import org.springframework.cloud.stream.binding.SubscribableChannelBindingTargetFactory;
 import org.springframework.cloud.stream.converter.CompositeMessageConverterFactory;
+import org.springframework.cloud.stream.function.TypeAwareBeanPostProcessor;
 import org.springframework.cloud.stream.micrometer.DestinationPublishingMetricsAutoConfiguration;
 import org.springframework.context.ApplicationListener;
 import org.springframework.context.annotation.Bean;
@@ -94,6 +95,11 @@ public class BindingServiceConfiguration {
 
 	private static final String ERROR_KEY_NAME = "error";
 
+
+	@Bean
+	public TypeAwareBeanPostProcessor handlerPostProcessor() {
+		return new TypeAwareBeanPostProcessor();
+	}
 
 	@Bean
 	public MessageChannelStreamListenerResultAdapter messageChannelStreamListenerResultAdapter() {
