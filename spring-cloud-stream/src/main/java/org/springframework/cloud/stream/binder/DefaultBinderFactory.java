@@ -165,9 +165,15 @@ public class DefaultBinderFactory implements BinderFactory, DisposableBean, Appl
 		else {
 			configurationName = name;
 		}
+
 		Binder<T, ConsumerProperties, ProducerProperties> binderInstance = getBinderInstance(configurationName);
 		Assert.state(verifyBinderTypeMatchesTarget(binderInstance, bindingTargetType),
 				"The binder '" + configurationName + "' cannot bind a " + bindingTargetType.getName());
+//=======
+//		Binder<T, ?, ?> binderInstance = getBinderInstance(configurationName);
+////		Assert.state(verifyBinderTypeMatchesTarget(binderInstance, bindingTargetType),
+////				"The binder '" + configurationName + "' cannot bind a " + bindingTargetType.getName());
+//>>>>>>> Iniitilal New Binder API
 		return binderInstance;
 	}
 

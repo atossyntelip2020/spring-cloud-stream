@@ -84,6 +84,17 @@ public class BindingServiceConfiguration {
 	public static final String STREAM_LISTENER_ANNOTATION_BEAN_POST_PROCESSOR_NAME =
 			"streamListenerAnnotationBeanPostProcessor";
 
+
+//	@Bean
+//	public TypeAwareBeanPostProcessor handlerPostProcessor() {
+//		return new TypeAwareBeanPostProcessor();
+//	}
+
+	public static final String ERROR_BRIDGE_CHANNEL = "errorBridgeChannel";
+
+	private static final String ERROR_KEY_NAME = "error";
+
+
 	@Bean
 	public MessageChannelStreamListenerResultAdapter messageChannelStreamListenerResultAdapter() {
 		return new MessageChannelStreamListenerResultAdapter();
