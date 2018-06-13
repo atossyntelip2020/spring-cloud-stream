@@ -238,7 +238,27 @@ public class BindableProxyFactory implements MethodInterceptor, FactoryBean<Obje
 	}
 
 	@Override
+	@Deprecated
 	public void bindOutputs(BindingService bindingService) {
+		this.createAndBindOutputs(bindingService);
+//		if (log.isDebugEnabled()) {
+//			log.debug(String.format("Binding outputs for %s:%s", this.namespace, this.type));
+//		}
+//		for (Map.Entry<String, BoundTargetHolder> boundTargetHolderEntry : this.outputHolders.entrySet()) {
+//			BoundTargetHolder boundTargetHolder = boundTargetHolderEntry.getValue();
+//			String outputTargetName = boundTargetHolderEntry.getKey();
+//			if (boundTargetHolderEntry.getValue().isBindable()) {
+//				if (log.isDebugEnabled()) {
+//					log.debug(String.format("Binding %s:%s:%s", this.namespace, this.type, outputTargetName));
+//				}
+//				bindingService.bindProducer(boundTargetHolder.getBoundTarget(), outputTargetName);
+//			}
+//		}
+	}
+
+	@Override
+	public Collection<Binding<Object>> createAndBindOutputs(BindingService bindingService) {
+		List<Binding<Object>> bindings = new ArrayList<>();
 		if (log.isDebugEnabled()) {
 			log.debug(String.format("Binding outputs for %s:%s", this.namespace, this.type));
 		}
@@ -249,9 +269,11 @@ public class BindableProxyFactory implements MethodInterceptor, FactoryBean<Obje
 				if (log.isDebugEnabled()) {
 					log.debug(String.format("Binding %s:%s:%s", this.namespace, this.type, outputTargetName));
 				}
-				bindingService.bindProducer(boundTargetHolder.getBoundTarget(), outputTargetName);
+				Binding<Object> producerBinding = bindingService.bindProducer(boundTargetHolder.getBoundTarget(), outputTargetName);
+				bindings.add(producerBinding);
 			}
 		}
+		return bindings;
 	}
 
 	@Override
