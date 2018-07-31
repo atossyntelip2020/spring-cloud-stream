@@ -4,6 +4,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -14,10 +15,13 @@ import org.reactivestreams.Publisher;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.BeanFactory;
 import org.springframework.beans.factory.InitializingBean;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.config.AutowireCapableBeanFactory;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.cloud.function.context.FunctionCatalog;
 import org.springframework.cloud.function.context.catalog.FunctionInspector;
+import org.springframework.cloud.stream.config.FunctionBindingProperties;
+import org.springframework.cloud.stream.config.FunctionProperties;
 import org.springframework.cloud.stream.converter.CompositeMessageConverterFactory;
 import org.springframework.cloud.stream.messaging.MessageListeningContainer;
 import org.springframework.cloud.stream.provisioning.ConsumerDestination;
@@ -29,6 +33,7 @@ import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.converter.SmartMessageConverter;
 import org.springframework.util.CollectionUtils;
+import org.springframework.util.StringUtils;
 
 import reactor.core.Disposable;
 import reactor.core.Disposables;
@@ -49,6 +54,9 @@ public abstract class DestinationBinder<C extends ConsumerProperties, P extends 
 	private final FunctionInspector functionInspector;
 
 	private final SmartMessageConverter messageConverter;
+
+	@Autowired
+	private FunctionProperties functionProperties;
 
 	public DestinationBinder(ProvisioningProvider<C, P> provisioningProvider, FunctionCatalog functionCatalog,
 			FunctionInspector functionInspector, CompositeMessageConverterFactory converterFactory) {
@@ -88,6 +96,7 @@ public abstract class DestinationBinder<C extends ConsumerProperties, P extends 
 				FunctionalBinding<?, ?> functionBinding = this.bind(consumerDestination.getName(), this.getExtendedConsumerProperties(inputDestinationName),
 						producerDestination.getName(), this.getExtendedProducerProperties(outputDestinationName), bi.getFunction());
 
+				functionBinding.subscribe();
 				this.registerBinding(functionBinding);
 			}
 			else if (bi.getFunction() instanceof Consumer) {
@@ -129,12 +138,30 @@ public abstract class DestinationBinder<C extends ConsumerProperties, P extends 
 		Set<String> consumers = functionCatalog.getNames(Consumer.class);
 		if (!CollectionUtils.isEmpty(functions)) {
 			for (String functionName : functions) {
-				Object userFunction = functionCatalog.lookup(Function.class, functionName);
-				BindingInfo bindingInfo = new BindingInfo(userFunction, functionName);
-				bindingInfo.setInputDestinationName(functionName + "_input");
-				bindingInfo.setOutputDestinationName(functionName + "_output");
-				bindingInfo.setGroupName("reactiveBinder");
-				bindingInfoList.add(bindingInfo);
+				if (this.functionProperties.getNames().contains(functionName)) {
+					Object userFunction = functionCatalog.lookup(Function.class, functionName);
+					BindingInfo bindingInfo = new BindingInfo(userFunction, functionName);
+					FunctionBindingProperties functionBindingProperties = functionProperties.getBindings().get(functionName);
+					if (StringUtils.hasText(functionBindingProperties.getInputDestination())) {
+						bindingInfo.setInputDestinationName(functionBindingProperties.getInputDestination());
+					}
+					else {
+						bindingInfo.setInputDestinationName(functionName + "_input");
+					}
+					if (StringUtils.hasText(functionBindingProperties.getOutputDestination())) {
+						bindingInfo.setOutputDestinationName(functionBindingProperties.getOutputDestination());
+					}
+					else {
+						bindingInfo.setOutputDestinationName(functionName + "_output");
+					}
+					if (StringUtils.hasText(functionBindingProperties.getGroup())) {
+						bindingInfo.setGroupName(functionBindingProperties.getGroup());
+					}
+					else {
+						bindingInfo.setGroupName(UUID.randomUUID().toString());
+					}
+					bindingInfoList.add(bindingInfo);
+				}
 			}
 		}
 		if (!CollectionUtils.isEmpty(consumers)) {
@@ -265,7 +292,12 @@ public abstract class DestinationBinder<C extends ConsumerProperties, P extends 
 										.doOnNext(msg -> {last[0] = msg;})
 										.transform(flux -> functionInvoker.apply(flux)) // invoke user function
 										.as(publisher -> outputPublisher(publisher)) // send output, using as vs transform because outputPublisher returns a Mono not a Flux
-										.doOnSuccess(noop -> onCommit(last[0]))
+										.doOnSuccess(noop ->
+											{
+												System.out.println("Invoking COMMIT");
+												onCommit(last[0]);
+											}
+											)
 										.retryBackoff(retryCount, retryBackoffDuration); // sideeffect;
 						})
 						.subscribe(d -> {}, exception -> onError(exception));

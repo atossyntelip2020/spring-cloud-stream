@@ -11,6 +11,7 @@ import org.springframework.cloud.function.core.FluxWrapper;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.converter.SmartMessageConverter;
 import org.springframework.messaging.support.MessageBuilder;
+import org.springframework.util.Assert;
 
 import reactor.core.publisher.Flux;
 
@@ -21,7 +22,7 @@ import reactor.core.publisher.Flux;
  * @param <I>
  * @param <O>
  */
-public class FunctionInvoker implements Function<Flux<? extends Object>, Flux<Object>>  {
+class FunctionInvoker implements Function<Flux<? extends Object>, Flux<Object>>  {
 
 	private final Consumer<Message<?>> producingMessageHandler;
 
@@ -43,6 +44,7 @@ public class FunctionInvoker implements Function<Flux<? extends Object>, Flux<Ob
 
 	@SuppressWarnings("rawtypes")
 	public FunctionInvoker(Object userFunction, FunctionInspector functionInspector, SmartMessageConverter messageConverter, Consumer<Message<?>> producingMessageHandler) {
+		Assert.notNull(messageConverter, "'messageConverter' must not be null");
 		this.messageConverter = messageConverter;
 		this.userFunction = userFunction;
 
@@ -78,18 +80,20 @@ public class FunctionInvoker implements Function<Flux<? extends Object>, Flux<Ob
 
 	private Message<?> toMessage(Object value, Message originalMessage) {
 		System.out.println("Converting TO MESSAGE: " + originalMessage);
-//		if (this.messageConverter != null) {
-//			return this.messageConverter.toMessage(value, originalMessage.getHeaders());
-//		}
-		return MessageBuilder.fromMessage(originalMessage).build();
+		Message<?> result = this.messageConverter.toMessage(value, originalMessage.getHeaders());
+		return result;
 	}
 
-	private Object resolveArgument(Message message) {
+	private Object resolveArgument(Message<?> message) {
 		System.out.println("Converting FROM MESSAGE: " + message);
-//		if (this.messageConverter != null) {
-//			return this.messageConverter.fromMessage(message, this.inputClass, inputType);
-//		}
-		return message;
+		Object result = message;
+		if (this.shouldConvertFromMessage(message)) {
+			result = this.messageConverter.fromMessage(message, this.inputClass);
+		}
+		return result;
 	}
 
+	private boolean shouldConvertFromMessage(Message<?> message) {
+		return !this.inputClass.isAssignableFrom(byte[].class) && !this.inputClass.isAssignableFrom(Object.class);
+	}
 }

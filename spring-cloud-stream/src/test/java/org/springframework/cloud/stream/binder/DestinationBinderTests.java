@@ -196,7 +196,5 @@ public class DestinationBinderTests {
 				}
 			};
 		}
-
 	}
-
 }
