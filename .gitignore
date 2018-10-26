@@ -19,4 +19,5 @@ _site/
 *.sw[op]
 .project
 sample-pages
-.class
+*.class
+bin/
